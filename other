@@ -1,0 +1,16 @@
+docker run -d \
+  --name concurrency-workshop-db \
+  -p 5432:5432 \
+  -e POSTGRES_DB=workshop \
+  -e POSTGRES_USER=workshop \
+  -e POSTGRES_PASSWORD=workshop123 \
+  -v docker_postgres-data:/var/lib/postgresql/data \
+  postgres:16-alpine \
+  postgres \
+    -c log_statement=all \
+    -c log_connections=on \
+    -c log_disconnections=on \
+    -c log_lock_waits=on \
+    -c deadlock_timeout=1s
+
+---
