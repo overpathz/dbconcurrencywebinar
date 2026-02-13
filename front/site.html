@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Concurrency Workshop Demo</title>
+    <style>
+        :root {
+            --bg-color: #1a1a2e;
+            --panel-color: #16213e;
+            --accent-color: #0f3460;
+            --text-color: #e94560;
+            --seat-free: #4caf50;
+            --seat-booked: #e94560;
+            --seat-selected: #f1c40f;
+            --log-bg: #000;
+            --log-text: #0f0;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg-color);
+            color: white;
+            margin: 0;
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        /* ЛІВА ЧАСТИНА - ЗАЛ */
+        .cinema-container {
+            flex: 2;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            border-right: 2px solid var(--accent-color);
+            padding: 20px;
+        }
+
+        .screen {
+            width: 80%;
+            height: 15px;
+            background: white;
+            box-shadow: 0 0 20px rgba(255, 255, 255, 0.5);
+            border-radius: 50%;
+            margin-bottom: 50px;
+            text-align: center;
+            color: #333;
+            font-size: 10px;
+            line-height: 15px;
+            text-transform: uppercase;
+            letter-spacing: 5px;
+        }
+
+        .seats-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr); /* 4 місця в ряд */
+            gap: 15px;
+            perspective: 500px;
+        }
+
+        .seat {
+            width: 60px;
+            height: 50px;
+            background-color: var(--seat-free);
+            border-radius: 10px 10px 5px 5px;
+            cursor: pointer;
+            position: relative;
+            transition: transform 0.2s, box-shadow 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            color: white;
+            box-shadow: 0 5px var(--accent-color);
+        }
+
+        .seat:active {
+            transform: translateY(4px);
+            box-shadow: 0 1px var(--accent-color);
+        }
+
+        .seat.booked {
+            background-color: var(--seat-booked);
+            cursor: not-allowed;
+            opacity: 0.6;
+            box-shadow: none;
+        }
+
+        .seat.selected {
+            background-color: var(--seat-selected);
+            color: #333;
+            transform: scale(1.1);
+            box-shadow: 0 0 15px var(--seat-selected);
+            z-index: 10;
+        }
+
+        .seat-info {
+            font-size: 12px;
+            position: absolute;
+            bottom: -20px;
+            white-space: nowrap;
+            opacity: 0.7;
+        }
+
+        /* ПРАВА ЧАСТИНА - ПУЛЬТ */
+        .control-panel {
+            flex: 1;
+            background-color: var(--panel-color);
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            box-shadow: -5px 0 15px rgba(0,0,0,0.5);
+        }
+
+        h2 { margin-top: 0; color: var(--text-color); border-bottom: 1px solid var(--text-color); padding-bottom: 10px; }
+
+        .control-group {
+            background: rgba(255,255,255,0.05);
+            padding: 15px;
+            border-radius: 8px;
+        }
+
+        label { display: block; margin-bottom: 8px; font-weight: bold; color: #aaa; }
+
+        input[type="text"], select {
+            width: 100%;
+            padding: 10px;
+            background: #222;
+            border: 1px solid #444;
+            color: white;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+
+        .radio-group { display: flex; gap: 10px; }
+        .radio-group label { cursor: pointer; color: white; display: flex; align-items: center; gap: 5px; }
+
+        button {
+            width: 100%;
+            padding: 15px;
+            background: var(--text-color);
+            color: white;
+            border: none;
+            border-radius: 5px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+
+        button:hover { background: #c0394d; }
+        button:disabled { background: #555; cursor: not-allowed; }
+
+        /* КОНСОЛЬ ЛОГІВ */
+        .logs-container {
+            flex-grow: 1;
+            background-color: var(--log-bg);
+            border: 1px solid #333;
+            border-radius: 5px;
+            padding: 10px;
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 12px;
+            color: var(--log-text);
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column-reverse; /* Нові логи знизу */
+        }
+
+        .log-entry { margin-bottom: 5px; border-bottom: 1px solid #222; padding-bottom: 2px; }
+        .log-time { color: #888; margin-right: 5px; }
+        .log-user { color: cyan; font-weight: bold; }
+        .log-type { margin: 0 5px; padding: 2px 4px; border-radius: 3px; font-size: 10px; }
+        .type-optimistic { background: #2980b9; color: white; }
+        .type-pessimistic { background: #d35400; color: white; }
+
+        .status-pending { color: yellow; }
+        .status-success { color: #4caf50; }
+        .status-error { color: #e94560; }
+
+        .spinner { display: inline-block; width: 10px; height: 10px; border: 2px solid white; border-top: 2px solid transparent; border-radius: 50%; animation: spin 1s linear infinite; margin-left: 5px; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
+</head>
+<body>
+
+<div class="cinema-container">
+    <div class="screen">ЕКРАН</div>
+    <div class="seats-grid" id="seatsGrid">
+        <div style="color: gray">Завантаження місць...</div>
+    </div>
+    <div style="margin-top: 30px;">
+        <button onclick="fetchSeats()" style="width: auto; padding: 10px 20px; background: #0f3460;">🔄 Оновити залу</button>
+    </div>
+</div>
+
+<div class="control-panel">
+    <h2>🎮 Пульт керування</h2>
+
+    <div class="control-group">
+        <label>1. Обери користувача</label>
+        <select id="userSelect">
+            <option value="Alice">Alice (User A)</option>
+            <option value="Bob">Bob (User B)</option>
+            <option value="Charlie">Charlie (User C)</option>
+        </select>
+    </div>
+
+    <div class="control-group">
+        <label>2. Обране місце</label>
+        <div id="selectedSeatDisplay" style="font-size: 20px; font-weight: bold; color: var(--seat-selected)">--</div>
+        <input type="hidden" id="selectedSeatId">
+    </div>
+
+    <div class="control-group">
+        <label>3. Стратегія блокування</label>
+        <div class="radio-group">
+            <label><input type="radio" name="strategy" value="optimistic" checked> Optimistic 🚀</label>
+            <label><input type="radio" name="strategy" value="pessimistic"> Pessimistic 🔒</label>
+        </div>
+        <p style="font-size: 11px; color: gray; margin-top:5px;">
+            Optimistic: швидкий, але можливий конфлікт.<br>
+            Pessimistic: надійний, але блокує ресурс (wait).
+        </p>
+    </div>
+
+    <button id="bookBtn" onclick="bookSeat()" disabled>ЗАБРОНЮВАТИ</button>
+
+    <div class="logs-container" id="logs">
+        <div class="log-entry">Waiting for actions...</div>
+    </div>
+</div>
+
+<script>
+    const API_BASE = 'http://localhost:8080/api/seats';
+    let selectedSeatId = null;
+
+    // --- 1. Відображення місць ---
+    async function fetchSeats() {
+        const grid = document.getElementById('seatsGrid');
+        try {
+            const response = await fetch(API_BASE);
+            if (!response.ok) throw new Error("API Error");
+            const seats = await response.json();
+
+            grid.innerHTML = '';
+
+            seats.forEach(seat => {
+                const seatEl = document.createElement('div');
+                seatEl.className = `seat ${seat.status.toLowerCase()}`;
+                if (seat.id == selectedSeatId) seatEl.classList.add('selected');
+
+                seatEl.innerHTML = `
+                    ${seat.seat_number}
+                    <div class="seat-info">${seat.booked_by || 'Free'} (v${seat.version})</div>
+                `;
+
+                if (seat.status === 'FREE') {
+                    seatEl.onclick = () => selectSeat(seat.id, seat.seat_number);
+                }
+
+                grid.appendChild(seatEl);
+            });
+        } catch (e) {
+            console.error(e);
+            grid.innerHTML = `<div style="color:red">Помилка з'єднання з сервером.<br>Перевір, чи запущено Spring Boot.</div>`;
+        }
+    }
+
+    function selectSeat(id, number) {
+        selectedSeatId = id;
+        document.getElementById('selectedSeatId').value = id;
+        document.getElementById('selectedSeatDisplay').innerText = number;
+        document.getElementById('bookBtn').disabled = false;
+
+        // Візуальне оновлення вибору без перезавантаження
+        document.querySelectorAll('.seat').forEach(s => s.classList.remove('selected'));
+        // Знайти блок по тексту (грубий спосіб, але для демо ок)
+        fetchSeats(); // Перемалювати, щоб зберегти актуальність
+    }
+
+    // --- 2. Логіка бронювання ---
+    async function bookSeat() {
+        const id = selectedSeatId;
+        const user = document.getElementById('userSelect').value;
+        const strategy = document.querySelector('input[name="strategy"]:checked').value;
+
+        if (!id) return;
+
+        // Додаємо лог "LOADING"
+        const logId = Date.now();
+        addLog(logId, user, strategy, 'Sending request... <span class="spinner"></span>', 'pending');
+
+        const url = `${API_BASE}/${id}/${strategy}?user=${user}`;
+
+        try {
+            const response = await fetch(url, { method: 'POST' });
+            const text = await response.text();
+
+            if (response.ok) {
+                updateLog(logId, `SUCCESS: ${text}`, 'success');
+                // Скидаємо вибір
+                selectedSeatId = null;
+                document.getElementById('selectedSeatDisplay').innerText = '--';
+                document.getElementById('bookBtn').disabled = true;
+            } else {
+                updateLog(logId, `FAIL: ${text}`, 'error');
+            }
+        } catch (e) {
+            updateLog(logId, `NETWORK ERROR: ${e.message}`, 'error');
+        }
+
+        // Оновлюємо карту
+        fetchSeats();
+    }
+
+    // --- 3. Система логування ---
+    function addLog(id, user, strategy, message, statusClass) {
+        const logs = document.getElementById('logs');
+        const time = new Date().toLocaleTimeString().split(' ')[0];
+        const entry = document.createElement('div');
+        entry.className = `log-entry`;
+        entry.id = `log-${id}`;
+        entry.innerHTML = `
+            <span class="log-time">[${time}]</span>
+            <span class="log-user">${user}</span>
+            <span class="log-type type-${strategy}">${strategy}</span>
+            <span class="log-msg ${statusClass}">${message}</span>
+        `;
+        logs.prepend(entry);
+    }
+
+    function updateLog(id, newMessage, statusClass) {
+        const entry = document.getElementById(`log-${id}`);
+        if (entry) {
+            const msgSpan = entry.querySelector('.log-msg');
+            msgSpan.className = `log-msg status-${statusClass}`;
+            msgSpan.innerHTML = newMessage;
+        }
+    }
+
+    // Запуск при старті
+    fetchSeats();
+
+    // Авто-оновлення кожні 5 сек (опційно, щоб бачити чужі дії)
+    setInterval(fetchSeats, 5000);
+
+</script>
+</body>
+</html>
